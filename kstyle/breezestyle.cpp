@@ -4671,47 +4671,212 @@ bool Style::drawPanelButtonCommandPrimitive(
 }
 
 //______________________________________________________________
-bool Style::drawPanelButtonToolPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
+bool Style::drawPanelButtonToolPrimitive(
+    const QStyleOption *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    // button state
-    bool enabled = option->state & QStyle::State_Enabled;
-    bool activeFocus = option->state & QStyle::State_HasFocus;
-    bool visualFocus = activeFocus && option->state & QStyle::State_KeyboardFocusChange && (widget == nullptr || widget->focusProxy() == nullptr);
-    bool hovered = option->state & QStyle::State_MouseOver;
-    bool down = option->state & QStyle::State_Sunken;
-    bool checked = option->state & QStyle::State_On;
-    bool flat = option->state & QStyle::State_AutoRaise;
-    bool hasNeutralHighlight = hasHighlightNeutral(widget, option);
+    const bool enabled =
+        option->state & QStyle::State_Enabled;
 
-    // NOTE: Using focus animation for bg down because the pressed animation only works on press when enabled for buttons and not on release.
-    _animations->widgetStateEngine().updateState(widget, AnimationFocus, down && enabled);
-    // NOTE: Using hover animation for all pen animations to prevent flickering when closing the menu.
-    _animations->widgetStateEngine().updateState(widget, AnimationHover, (hovered || visualFocus || down) && enabled);
-    qreal bgAnimation = _animations->widgetStateEngine().opacity(widget, AnimationFocus);
-    qreal penAnimation = _animations->widgetStateEngine().opacity(widget, AnimationHover);
+    const bool hovered =
+        option->state & QStyle::State_MouseOver;
 
-    QRect baseRect = option->rect;
-    // adjust frame in case of menu
-    const auto menuStyle = BreezePrivate::toolButtonMenuArrowStyle(option);
-    if (menuStyle == BreezePrivate::ToolButtonMenuArrowStyle::SubControl) {
-        // NOTE: working around weird issue with flat toolbuttons having unusually wide rects
-        const auto clipRect = baseRect.adjusted(0, 0, flat ? -Metrics::ToolButton_InlineIndicatorWidth - Metrics::ToolButton_ItemSpacing * 2 : 0, 0);
-        painter->setClipRect(visualRect(option, clipRect));
-        baseRect.adjust(0, 0, Metrics::Frame_FrameRadius + PenWidth::Shadow, 0);
-        baseRect = visualRect(option, baseRect);
+    const bool down =
+        option->state & QStyle::State_Sunken;
+
+    const bool checked =
+        option->state & QStyle::State_On;
+
+    const bool autoRaise =
+        option->state & QStyle::State_AutoRaise;
+
+    /*
+     * Match the approved HumanBreeze prototype:
+     *
+     * - normal tool buttons always have a surface
+     * - auto-raise toolbar buttons remain flat until active
+     */
+    const bool drawBackground =
+        !autoRaise
+        || hovered
+        || down
+        || checked;
+
+    if (!drawBackground) {
+        return true;
     }
 
-    QHash<QByteArray, bool> stateProperties;
-    stateProperties["enabled"] = enabled;
-    stateProperties["visualFocus"] = visualFocus;
-    stateProperties["hovered"] = hovered;
-    stateProperties["down"] = down;
-    stateProperties["checked"] = checked;
-    stateProperties["flat"] = flat;
-    stateProperties["hasNeutralHighlight"] = hasNeutralHighlight;
-    stateProperties["isActiveWindow"] = widget ? widget->isActiveWindow() : true;
+    QRect baseRect = option->rect;
 
-    _helper->renderButtonFrame(painter, baseRect, option->palette, stateProperties, bgAnimation, penAnimation);
+    /*
+     * Preserve Breeze's split-menu geometry handling.
+     * Only the surface rendering itself changes.
+     */
+    const auto menuStyle =
+        BreezePrivate::toolButtonMenuArrowStyle(option);
+
+    if (menuStyle ==
+        BreezePrivate::ToolButtonMenuArrowStyle::SubControl) {
+
+        const auto clipRect =
+            baseRect.adjusted(
+                0,
+                0,
+                autoRaise
+                    ? -Metrics::ToolButton_InlineIndicatorWidth
+                      - Metrics::ToolButton_ItemSpacing * 2
+                    : 0,
+                0);
+
+        painter->setClipRect(
+            visualRect(option, clipRect));
+
+        baseRect.adjust(
+            0,
+            0,
+            Metrics::Frame_FrameRadius
+                + PenWidth::Shadow,
+            0);
+
+        baseRect =
+            visualRect(option, baseRect);
+    }
+
+    const QColor base =
+        option->palette.color(
+            QPalette::Button);
+
+    auto shadeHuman =
+        [](const QColor &input, qreal factor) -> QColor {
+
+            float h = 0.0f;
+            float sat = 0.0f;
+            float light = 0.0f;
+            float alpha = 1.0f;
+
+            input.getHslF(
+                &h,
+                &sat,
+                &light,
+                &alpha);
+
+            const float f =
+                static_cast<float>(factor);
+
+            light = std::clamp(
+                light * f,
+                0.0f,
+                1.0f);
+
+            sat = std::clamp(
+                sat * f,
+                0.0f,
+                1.0f);
+
+            QColor result;
+            result.setHslF(
+                h,
+                sat,
+                light,
+                alpha);
+
+            return result;
+        };
+
+    QColor c0;
+    QColor c1;
+    QColor c2;
+    QColor c3;
+
+    if (!enabled) {
+        c0 = shadeHuman(base, 1.06);
+        c1 = shadeHuman(base, 1.01);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.00);
+
+    } else if (down || checked) {
+        c0 = shadeHuman(base, 0.82);
+        c1 = shadeHuman(base, 0.92);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 0.90);
+
+    } else if (hovered) {
+        c0 = shadeHuman(base, 1.26);
+        c1 = shadeHuman(base, 1.10);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.05);
+
+    } else {
+        c0 = shadeHuman(base, 1.18);
+        c1 = shadeHuman(base, 1.04);
+        c2 = shadeHuman(base, 0.96);
+        c3 = shadeHuman(base, 1.01);
+    }
+
+    QLinearGradient gradient(
+        baseRect.topLeft(),
+        baseRect.bottomLeft());
+
+    gradient.setColorAt(0.00, c0);
+    gradient.setColorAt(0.48, c1);
+    gradient.setColorAt(0.52, c2);
+    gradient.setColorAt(1.00, c3);
+
+    constexpr qreal radius = 3.0;
+
+    QRectF frame(baseRect);
+    frame.adjust(
+        0.5,
+        0.5,
+        -0.5,
+        -0.5);
+
+    QPainterPath path;
+    path.addRoundedRect(
+        frame,
+        radius,
+        radius);
+
+    painter->save();
+
+    painter->setRenderHint(
+        QPainter::Antialiasing,
+        true);
+
+    painter->fillPath(
+        path,
+        gradient);
+
+    painter->setPen(
+        QPen(
+            shadeHuman(base, 0.55),
+            1.0));
+
+    painter->drawPath(path);
+
+    if (!(down || checked)
+        && baseRect.width() > 8) {
+
+        QColor topHighlight(Qt::white);
+        topHighlight.setAlphaF(0.55);
+
+        painter->setPen(
+            QPen(
+                topHighlight,
+                1.0));
+
+        painter->drawLine(
+            QPointF(
+                baseRect.left() + radius + 1,
+                baseRect.top() + 1.5),
+            QPointF(
+                baseRect.right() - radius - 1,
+                baseRect.top() + 1.5));
+    }
+
+    painter->restore();
+
     if (painter->hasClipping()) {
         painter->setClipping(false);
     }
@@ -5226,67 +5391,218 @@ bool Style::drawIndicatorRadioButtonPrimitive(const QStyleOption *option, QPaint
 }
 
 //___________________________________________________________________________________
-bool Style::drawIndicatorButtonDropDownPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
+bool Style::drawIndicatorButtonDropDownPrimitive(
+    const QStyleOption *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    // cast option and check
-    const auto complexOption(qstyleoption_cast<const QStyleOptionComplex *>(option));
-    if (!complexOption || !(complexOption->subControls & SC_ToolButtonMenu)) {
+    Q_UNUSED(widget)
+
+    const auto complexOption =
+        qstyleoption_cast<const QStyleOptionComplex *>(option);
+
+    if (!complexOption
+        || !(complexOption->subControls & SC_ToolButtonMenu)) {
         return true;
     }
 
-    // button state
-    bool enabled = option->state & QStyle::State_Enabled;
-    bool activeFocus = option->state & QStyle::State_HasFocus;
-    bool visualFocus = activeFocus && option->state & QStyle::State_KeyboardFocusChange && (widget == nullptr || widget->focusProxy() == nullptr);
-    bool hovered = option->state & QStyle::State_MouseOver;
-    bool down = option->state & QStyle::State_Sunken;
-    bool checked = option->state & QStyle::State_On;
-    bool flat = option->state & QStyle::State_AutoRaise;
-    bool hasNeutralHighlight = hasHighlightNeutral(widget, option);
+    const bool enabled =
+        option->state & QStyle::State_Enabled;
 
-    // update animation state
-    // NOTE: Using focus animation for bg down because the pressed animation only works on press when enabled for buttons and not on release.
-    _animations->widgetStateEngine().updateState(widget, AnimationFocus, down && enabled);
-    // NOTE: Using hover animation for all pen animations to prevent flickering when closing the menu.
-    _animations->widgetStateEngine().updateState(widget, AnimationHover, (hovered || visualFocus || down) && enabled);
-    qreal bgAnimation = _animations->widgetStateEngine().opacity(widget, AnimationFocus);
-    qreal penAnimation = _animations->widgetStateEngine().opacity(widget, AnimationHover);
+    const bool hovered =
+        option->state & QStyle::State_MouseOver;
 
+    const bool down =
+        option->state & QStyle::State_Sunken;
+
+    const bool checked =
+        option->state & QStyle::State_On;
+
+    const bool autoRaise =
+        option->state & QStyle::State_AutoRaise;
+
+    const bool drawBackground =
+        !autoRaise
+        || hovered
+        || down
+        || checked;
+
+    if (!drawBackground) {
+        return true;
+    }
+
+    /*
+     * This option rect is only the dropdown segment.
+     *
+     * Extend the paint rectangle underneath the main-button
+     * segment, then clip back to this segment. This produces
+     * one visually continuous rounded Human button rather than
+     * two independently rounded buttons.
+     */
     QRect baseRect = option->rect;
-    const auto clipRect = visualRect(option, baseRect);
+
+    const QRect clipRect =
+        visualRect(option, baseRect);
+
+    painter->save();
+
     painter->setClipRect(clipRect);
-    baseRect.adjust(-Metrics::Frame_FrameRadius - qRound(PenWidth::Shadow), 0, 0, 0);
-    baseRect = visualRect(option, baseRect);
 
-    QHash<QByteArray, bool> stateProperties;
-    stateProperties["enabled"] = enabled;
-    stateProperties["visualFocus"] = visualFocus;
-    stateProperties["hovered"] = hovered;
-    stateProperties["down"] = down;
-    stateProperties["checked"] = checked;
-    stateProperties["flat"] = flat;
-    stateProperties["hasNeutralHighlight"] = hasNeutralHighlight;
-    stateProperties["isActiveWindow"] = widget ? widget->isActiveWindow() : true;
+    baseRect.adjust(
+        -Metrics::Frame_FrameRadius
+            - qRound(PenWidth::Shadow),
+        0,
+        0,
+        0);
 
-    _helper->renderButtonFrame(painter, baseRect, option->palette, stateProperties, bgAnimation, penAnimation);
+    baseRect =
+        visualRect(option, baseRect);
 
-    QRectF frameRect = _helper->strokedRect(_helper->shadowedRect(baseRect));
+    const QColor base =
+        option->palette.color(QPalette::Button);
 
-    // also render separator
-    if (!flat || activeFocus || hovered || down || checked || penAnimation != AnimationData::OpacityInvalid) {
-        painter->setBrush(Qt::NoBrush);
-        if (option->direction == Qt::RightToLeft) {
-            QRectF separatorRect = frameRect.adjusted(0, 0, -Metrics::Frame_FrameRadius - PenWidth::Shadow, 0);
-            painter->drawLine(separatorRect.topRight(), separatorRect.bottomRight());
-        } else {
-            QRectF separatorRect = frameRect.adjusted(Metrics::Frame_FrameRadius + PenWidth::Shadow, 0, 0, 0);
-            painter->drawLine(separatorRect.topLeft(), separatorRect.bottomLeft());
-        }
+    auto shadeHuman =
+        [](const QColor &input, qreal factor) -> QColor {
+            float h = 0.0f;
+            float sat = 0.0f;
+            float light = 0.0f;
+            float alpha = 1.0f;
+
+            input.getHslF(
+                &h,
+                &sat,
+                &light,
+                &alpha);
+
+            const float f =
+                static_cast<float>(factor);
+
+            light = std::clamp(
+                light * f,
+                0.0f,
+                1.0f);
+
+            sat = std::clamp(
+                sat * f,
+                0.0f,
+                1.0f);
+
+            QColor result;
+            result.setHslF(
+                h,
+                sat,
+                light,
+                alpha);
+
+            return result;
+        };
+
+    QColor c0;
+    QColor c1;
+    QColor c2;
+    QColor c3;
+
+    if (!enabled) {
+        c0 = shadeHuman(base, 1.06);
+        c1 = shadeHuman(base, 1.01);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.00);
+
+    } else if (down || checked) {
+        c0 = shadeHuman(base, 0.82);
+        c1 = shadeHuman(base, 0.92);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 0.90);
+
+    } else if (hovered) {
+        c0 = shadeHuman(base, 1.26);
+        c1 = shadeHuman(base, 1.10);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.05);
+
+    } else {
+        c0 = shadeHuman(base, 1.18);
+        c1 = shadeHuman(base, 1.04);
+        c2 = shadeHuman(base, 0.96);
+        c3 = shadeHuman(base, 1.01);
     }
 
-    if (painter->hasClipping()) {
-        painter->setClipping(false);
+    QLinearGradient gradient(
+        baseRect.topLeft(),
+        baseRect.bottomLeft());
+
+    gradient.setColorAt(0.00, c0);
+    gradient.setColorAt(0.48, c1);
+    gradient.setColorAt(0.52, c2);
+    gradient.setColorAt(1.00, c3);
+
+    constexpr qreal radius = 3.0;
+
+    QRectF frame(baseRect);
+    frame.adjust(0.5, 0.5, -0.5, -0.5);
+
+    QPainterPath path;
+    path.addRoundedRect(
+        frame,
+        radius,
+        radius);
+
+    painter->setRenderHint(
+        QPainter::Antialiasing,
+        true);
+
+    painter->fillPath(path, gradient);
+
+    const QColor outline =
+        shadeHuman(base, 0.55);
+
+    painter->setPen(
+        QPen(outline, 1.0));
+
+    painter->drawPath(path);
+
+    if (!(down || checked)
+        && baseRect.width() > 8) {
+
+        QColor topHighlight(Qt::white);
+        topHighlight.setAlphaF(0.55);
+
+        painter->setPen(
+            QPen(topHighlight, 1.0));
+
+        painter->drawLine(
+            QPointF(
+                baseRect.left() + radius + 1,
+                baseRect.top() + 1.5),
+            QPointF(
+                baseRect.right() - radius - 1,
+                baseRect.top() + 1.5));
     }
+
+    /*
+     * Separator between the button action and dropdown action.
+     */
+    painter->setPen(QPen(outline, 1.0));
+
+    if (option->direction == Qt::RightToLeft) {
+        painter->drawLine(
+            QPointF(
+                clipRect.right() - 0.5,
+                clipRect.top() + 2),
+            QPointF(
+                clipRect.right() - 0.5,
+                clipRect.bottom() - 2));
+    } else {
+        painter->drawLine(
+            QPointF(
+                clipRect.left() + 0.5,
+                clipRect.top() + 2),
+            QPointF(
+                clipRect.left() + 0.5,
+                clipRect.bottom() - 2));
+    }
+
+    painter->restore();
 
     return true;
 }
