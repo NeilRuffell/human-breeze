@@ -4949,6 +4949,146 @@ bool Style::drawPanelItemViewItemPrimitive(const QStyleOption *option, QPainter 
                                         QColor());
     }
 
+    /*
+     * HumanBreeze selected item surface.
+     *
+     * Exact rendering values from the approved prototype.
+     * This affects selected QListView/QTreeView/QTableView-style
+     * items only. Unselected hover/background rendering remains Breeze.
+     */
+    if (selected) {
+        const QRect selectionRect =
+            viewItemOption->rect.adjusted(1, 0, -1, 0);
+
+        if (selectionRect.isValid()) {
+            const QColor base =
+                palette.color(QPalette::Highlight);
+
+            auto shadeHuman =
+                [](const QColor &input, qreal factor) -> QColor {
+                    float h = 0.0f;
+                    float sat = 0.0f;
+                    float light = 0.0f;
+                    float alpha = 1.0f;
+
+                    input.getHslF(
+                        &h,
+                        &sat,
+                        &light,
+                        &alpha);
+
+                    const float f =
+                        static_cast<float>(factor);
+
+                    light = std::clamp(
+                        light * f,
+                        0.0f,
+                        1.0f);
+
+                    sat = std::clamp(
+                        sat * f,
+                        0.0f,
+                        1.0f);
+
+                    QColor result;
+                    result.setHslF(
+                        h,
+                        sat,
+                        light,
+                        alpha);
+
+                    return result;
+                };
+
+            QColor c0;
+            QColor c1;
+            QColor c2;
+            QColor c3;
+
+            if (!enabled) {
+                c0 = shadeHuman(base, 1.06);
+                c1 = shadeHuman(base, 1.01);
+                c2 = shadeHuman(base, 0.98);
+                c3 = shadeHuman(base, 1.00);
+
+            } else if (mouseOver) {
+                c0 = shadeHuman(base, 1.30);
+                c1 = shadeHuman(base, 1.08);
+                c2 = shadeHuman(base, 0.96);
+                c3 = shadeHuman(base, 1.08);
+
+            } else {
+                c0 = shadeHuman(base, 1.22);
+                c1 = shadeHuman(base, 1.04);
+                c2 = shadeHuman(base, 0.94);
+                c3 = shadeHuman(base, 1.04);
+            }
+
+            QLinearGradient gradient(
+                selectionRect.topLeft(),
+                selectionRect.bottomLeft());
+
+            gradient.setColorAt(0.00, c0);
+            gradient.setColorAt(0.48, c1);
+            gradient.setColorAt(0.52, c2);
+            gradient.setColorAt(1.00, c3);
+
+            constexpr qreal radius = 2.0;
+
+            QRectF frame(selectionRect);
+            frame.adjust(
+                0.5,
+                0.5,
+                -0.5,
+                -0.5);
+
+            QPainterPath path;
+            path.addRoundedRect(
+                frame,
+                radius,
+                radius);
+
+            painter->save();
+
+            painter->setRenderHint(
+                QPainter::Antialiasing,
+                true);
+
+            painter->fillPath(
+                path,
+                gradient);
+
+            painter->setPen(
+                QPen(
+                    shadeHuman(base, 0.58),
+                    1.0));
+
+            painter->drawPath(path);
+
+            QColor topHighlight(Qt::white);
+            topHighlight.setAlphaF(0.30);
+
+            if (selectionRect.width() > 8) {
+                painter->setPen(
+                    QPen(
+                        topHighlight,
+                        1.0));
+
+                painter->drawLine(
+                    QPointF(
+                        selectionRect.left() + radius + 1,
+                        selectionRect.top() + 1.5),
+                    QPointF(
+                        selectionRect.right() - radius - 1,
+                        selectionRect.top() + 1.5));
+            }
+
+            painter->restore();
+        }
+
+        return true;
+    }
+
     // stop here if no highlight is needed
     if (!(mouseOver || selected || hasCustomBackground)) {
         return true;
