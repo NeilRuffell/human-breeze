@@ -1,0 +1,6 @@
+[Misc]
+Name=HumanBreeze
+Comment=Ubuntu 9.04 Human-inspired application style based on Breeze
+
+[KDE]
+WidgetStyle=HumanBreeze
