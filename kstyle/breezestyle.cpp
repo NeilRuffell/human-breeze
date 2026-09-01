@@ -6259,8 +6259,123 @@ bool Style::drawMenuItemControl(const QStyleOption *option, QPainter *painter, c
         return true;
     }
 
+    /*
+     * HumanBreeze selected menu item.
+     * Exact surface values from the approved prototype.
+     */
+    if (selected) {
+        const QRect selectionRect =
+            menuItemOption->rect.adjusted(2, 1, -2, -1);
+
+        if (selectionRect.isValid()) {
+            const QColor base =
+                menuItemOption->palette.color(
+                    QPalette::Highlight);
+
+            auto shadeHuman =
+                [](const QColor &input, qreal factor) -> QColor {
+                    float h = 0.0f;
+                    float sat = 0.0f;
+                    float light = 0.0f;
+                    float alpha = 1.0f;
+
+                    input.getHslF(
+                        &h,
+                        &sat,
+                        &light,
+                        &alpha);
+
+                    const float f =
+                        static_cast<float>(factor);
+
+                    light = std::clamp(
+                        light * f,
+                        0.0f,
+                        1.0f);
+
+                    sat = std::clamp(
+                        sat * f,
+                        0.0f,
+                        1.0f);
+
+                    QColor result;
+                    result.setHslF(
+                        h,
+                        sat,
+                        light,
+                        alpha);
+
+                    return result;
+                };
+
+            QColor c0 = shadeHuman(base, 1.30);
+            QColor c1 = shadeHuman(base, 1.08);
+            QColor c2 = shadeHuman(base, 0.96);
+            QColor c3 = shadeHuman(base, 1.08);
+
+            QLinearGradient gradient(
+                selectionRect.topLeft(),
+                selectionRect.bottomLeft());
+
+            gradient.setColorAt(0.00, c0);
+            gradient.setColorAt(0.48, c1);
+            gradient.setColorAt(0.52, c2);
+            gradient.setColorAt(1.00, c3);
+
+            constexpr qreal radius = 2.0;
+
+            QRectF frame(selectionRect);
+            frame.adjust(
+                0.5,
+                0.5,
+                -0.5,
+                -0.5);
+
+            QPainterPath path;
+            path.addRoundedRect(
+                frame,
+                radius,
+                radius);
+
+            painter->save();
+
+            painter->setRenderHint(
+                QPainter::Antialiasing,
+                true);
+
+            painter->fillPath(
+                path,
+                gradient);
+
+            painter->setPen(
+                QPen(
+                    shadeHuman(base, 0.58),
+                    1.0));
+
+            painter->drawPath(path);
+
+            if (selectionRect.width() > 8) {
+                QColor highlight(Qt::white);
+                highlight.setAlphaF(0.30);
+
+                painter->setPen(
+                    QPen(highlight, 1.0));
+
+                painter->drawLine(
+                    QPointF(
+                        selectionRect.left() + radius + 1,
+                        selectionRect.top() + 1.5),
+                    QPointF(
+                        selectionRect.right() - radius - 1,
+                        selectionRect.top() + 1.5));
+            }
+
+            painter->restore();
+        }
+    }
+
     // render hover and focus
-    if (useStrongFocus && (selected || sunken)) {
+    if (!selected && useStrongFocus && sunken) {
         auto color = _helper->focusColor(palette);
         // When clicking, use the same background color
         auto outlineColor = color;
@@ -6376,7 +6491,7 @@ bool Style::drawMenuItemControl(const QStyleOption *option, QPainter *painter, c
         const ArrowOrientation orientation(reverseLayout ? ArrowLeft : ArrowRight);
 
         // color
-        const QColor arrowColor = _helper->arrowColor(palette, sunken ? QPalette::HighlightedText : QPalette::WindowText);
+        const QColor arrowColor = _helper->arrowColor(palette, (selected || sunken) ? QPalette::HighlightedText : QPalette::WindowText);
 
         // render
         _helper->renderArrow(painter, arrowRect, arrowColor, orientation);
@@ -6394,7 +6509,7 @@ bool Style::drawMenuItemControl(const QStyleOption *option, QPainter *painter, c
         painter->setFont(menuItemOption->font);
 
         // color role
-        QPalette::ColorRole role = sunken ? QPalette::HighlightedText : QPalette::WindowText;
+        QPalette::ColorRole role = (selected || sunken) ? QPalette::HighlightedText : QPalette::WindowText;
 
         // locate accelerator and render
         const int tabPosition(text.indexOf(QLatin1Char('\t')));
@@ -6414,7 +6529,7 @@ bool Style::drawMenuItemControl(const QStyleOption *option, QPainter *painter, c
         drawItemText(painter, textRect, textFlags, palette, enabled, text, role);
 
         // render hover and focus
-        if (!useStrongFocus && (selected || sunken)) {
+        if (!selected && !useStrongFocus && sunken) {
             QColor outlineColor;
             if (sunken) {
                 outlineColor = _helper->focusColor(palette);
