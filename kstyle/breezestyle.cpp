@@ -8518,24 +8518,163 @@ bool Style::drawComboBoxComplexControl(const QStyleOptionComplex *option, QPaint
                 drawPrimitive(PE_FrameLineEdit, option, painter, widget);
             }
         } else {
-            // NOTE: Using focus animation for bg down because the pressed animation only works on press when enabled for buttons and not on release.
-            _animations->widgetStateEngine().updateState(widget, AnimationFocus, (down || checked) && enabled);
-            // NOTE: Using hover animation for all pen animations to prevent flickering when closing the menu.
-            _animations->widgetStateEngine().updateState(widget, AnimationHover, (hovered || visualFocus || down || checked) && enabled);
-            qreal bgAnimation = _animations->widgetStateEngine().opacity(widget, AnimationFocus);
-            qreal penAnimation = _animations->widgetStateEngine().opacity(widget, AnimationHover);
+            /*
+             * HumanBreeze standard non-editable combo-box frame.
+             *
+             * Flat/frame-less combo boxes retain Breeze rendering
+             * for now; this phase changes normal framed combos only.
+             */
+            if (flat) {
+                QHash<QByteArray, bool> stateProperties;
+                stateProperties["enabled"] = enabled;
+                stateProperties["visualFocus"] = visualFocus;
+                stateProperties["hovered"] = hovered;
+                stateProperties["down"] = down || checked;
+                stateProperties["flat"] = true;
+                stateProperties["hasNeutralHighlight"] = hasNeutralHighlight;
+                stateProperties["isActiveWindow"] =
+                    widget ? widget->isActiveWindow() : true;
 
-            QHash<QByteArray, bool> stateProperties;
-            stateProperties["enabled"] = enabled;
-            stateProperties["visualFocus"] = visualFocus;
-            stateProperties["hovered"] = hovered;
-            // See notes for down and checked above.
-            stateProperties["down"] = down || checked;
-            stateProperties["flat"] = flat;
-            stateProperties["hasNeutralHighlight"] = hasNeutralHighlight;
-            stateProperties["isActiveWindow"] = widget ? widget->isActiveWindow() : true;
+                _helper->renderButtonFrame(
+                    painter,
+                    option->rect,
+                    option->palette,
+                    stateProperties);
 
-            _helper->renderButtonFrame(painter, option->rect, option->palette, stateProperties, bgAnimation, penAnimation);
+            } else {
+                const QColor base =
+                    option->palette.color(QPalette::Button);
+
+                auto shadeHuman =
+                    [](const QColor &input, qreal factor) -> QColor {
+                        float h = 0.0f;
+                        float sat = 0.0f;
+                        float light = 0.0f;
+                        float alpha = 1.0f;
+
+                        input.getHslF(
+                            &h,
+                            &sat,
+                            &light,
+                            &alpha);
+
+                        const float f =
+                            static_cast<float>(factor);
+
+                        light = std::clamp(
+                            light * f,
+                            0.0f,
+                            1.0f);
+
+                        sat = std::clamp(
+                            sat * f,
+                            0.0f,
+                            1.0f);
+
+                        QColor result;
+                        result.setHslF(
+                            h,
+                            sat,
+                            light,
+                            alpha);
+
+                        return result;
+                    };
+
+                QColor c0;
+                QColor c1;
+                QColor c2;
+                QColor c3;
+
+                const bool pressed =
+                    down || checked;
+
+                if (!enabled) {
+                    c0 = shadeHuman(base, 1.06);
+                    c1 = shadeHuman(base, 1.01);
+                    c2 = shadeHuman(base, 0.98);
+                    c3 = shadeHuman(base, 1.00);
+
+                } else if (pressed) {
+                    c0 = shadeHuman(base, 0.82);
+                    c1 = shadeHuman(base, 0.92);
+                    c2 = shadeHuman(base, 0.98);
+                    c3 = shadeHuman(base, 0.90);
+
+                } else if (hovered) {
+                    c0 = shadeHuman(base, 1.26);
+                    c1 = shadeHuman(base, 1.10);
+                    c2 = shadeHuman(base, 0.98);
+                    c3 = shadeHuman(base, 1.05);
+
+                } else {
+                    c0 = shadeHuman(base, 1.18);
+                    c1 = shadeHuman(base, 1.04);
+                    c2 = shadeHuman(base, 0.96);
+                    c3 = shadeHuman(base, 1.01);
+                }
+
+                const QRect rect = option->rect;
+
+                QLinearGradient gradient(
+                    rect.topLeft(),
+                    rect.bottomLeft());
+
+                gradient.setColorAt(0.00, c0);
+                gradient.setColorAt(0.48, c1);
+                gradient.setColorAt(0.52, c2);
+                gradient.setColorAt(1.00, c3);
+
+                constexpr qreal radius = 3.0;
+
+                QRectF frame(rect);
+                frame.adjust(
+                    0.5,
+                    0.5,
+                    -0.5,
+                    -0.5);
+
+                QPainterPath path;
+                path.addRoundedRect(
+                    frame,
+                    radius,
+                    radius);
+
+                painter->save();
+
+                painter->setRenderHint(
+                    QPainter::Antialiasing,
+                    true);
+
+                painter->fillPath(
+                    path,
+                    gradient);
+
+                painter->setPen(
+                    QPen(
+                        shadeHuman(base, 0.55),
+                        1.0));
+
+                painter->drawPath(path);
+
+                if (!pressed && rect.width() > 8) {
+                    QColor topHighlight(Qt::white);
+                    topHighlight.setAlphaF(0.55);
+
+                    painter->setPen(
+                        QPen(topHighlight, 1.0));
+
+                    painter->drawLine(
+                        QPointF(
+                            rect.left() + radius + 1,
+                            rect.top() + 1.5),
+                        QPointF(
+                            rect.right() - radius - 1,
+                            rect.top() + 1.5));
+                }
+
+                painter->restore();
+            }
         }
     }
 
