@@ -39,12 +39,14 @@
 #include <QGroupBox>
 #include <QItemDelegate>
 #include <QLineEdit>
+#include <QLinearGradient>
 #include <QMainWindow>
 #include <QMdiArea>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMetaEnum>
 #include <QPainter>
+#include <QPainterPath>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollBar>
@@ -64,6 +66,8 @@
 #endif
 
 #include "breeze_logging.h"
+
+#include <algorithm>
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 constexpr auto HighlightColor = QPalette::Accent;
@@ -4495,62 +4499,173 @@ bool Style::drawIndicatorHeaderArrowPrimitive(const QStyleOption *option, QPaint
 }
 
 //______________________________________________________________
-bool Style::drawPanelButtonCommandPrimitive(const QStyleOption *option, QPainter *painter, const QWidget *widget) const
+bool Style::drawPanelButtonCommandPrimitive(
+    const QStyleOption *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    // button state
-    bool enabled = option->state & QStyle::State_Enabled;
-    bool activeFocus = option->state & QStyle::State_HasFocus;
-    // Using `widget->focusProxy() == nullptr` to work around a possible Qt bug
-    // where buttons that have a focusProxy still show focus.
-    bool visualFocus = activeFocus && option->state & QStyle::State_KeyboardFocusChange && (widget == nullptr || widget->focusProxy() == nullptr);
-    bool hovered = option->state & QStyle::State_MouseOver;
-    bool down = option->state & QStyle::State_Sunken;
-    bool checked = option->state & QStyle::State_On;
-    bool flat = false;
-    bool hasMenu = false;
-    // Use to determine if this button is a default button.
-    bool defaultButton = false;
-    bool hasNeutralHighlight = hasHighlightNeutral(widget, option);
-    bool roundButton = widget ? widget->property(PropertyNames::roundButton).toBool() : false;
-    if (!roundButton && option->styleObject) {
-        roundButton = option->styleObject->property(PropertyNames::roundButton).toBool();
+    Q_UNUSED(widget)
+
+    /*
+     * HumanBreeze push-button surface.
+     *
+     * Intentionally local to standard QPushButtons.
+     * Do not reuse this for other controls until each widget
+     * family has been separately approved.
+     */
+
+    if (!option || !option->rect.isValid()) {
+        return true;
     }
 
-    const auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option);
-    if (buttonOption) {
-        flat = buttonOption->features & QStyleOptionButton::Flat;
-        hasMenu = buttonOption->features & QStyleOptionButton::HasMenu;
-        // If autoDefault is re-enabled by undoing a change to this file and
-        // we decide that the default button highlight moving around outside
-        // of the QDialogButtonBox is annoying, we could add
-        // ` && widget->parentWidget()->inherits("QDialogButtonBox")`.
-        // The downside would be that you can't see which button is the
-        // default button when a QPushButton in a QDialog outside of a
-        // QDialogButtonBox is focused.
-        defaultButton = buttonOption->features & QStyleOptionButton::DefaultButton;
+    const bool enabled =
+        option->state & QStyle::State_Enabled;
+
+    const bool hovered =
+        option->state & QStyle::State_MouseOver;
+
+    const bool pressed =
+        option->state
+        & (QStyle::State_Sunken | QStyle::State_On);
+
+    const QColor base =
+        option->palette.color(QPalette::Button);
+
+    auto shadeHuman =
+        [](const QColor &input, qreal factor) -> QColor {
+            float h = 0.0f;
+            float sat = 0.0f;
+            float light = 0.0f;
+            float alpha = 1.0f;
+
+            input.getHslF(
+                &h,
+                &sat,
+                &light,
+                &alpha);
+
+            const float f =
+                static_cast<float>(factor);
+
+            light = std::clamp(
+                light * f,
+                0.0f,
+                1.0f);
+
+            sat = std::clamp(
+                sat * f,
+                0.0f,
+                1.0f);
+
+            QColor result;
+            result.setHslF(
+                h,
+                sat,
+                light,
+                alpha);
+
+            return result;
+        };
+
+    auto withAlpha =
+        [](QColor color, qreal value) -> QColor {
+            color.setAlphaF(value);
+            return color;
+        };
+
+    QColor c0;
+    QColor c1;
+    QColor c2;
+    QColor c3;
+
+    /*
+     * These are the exact values from the
+     * approved HumanBreeze prototype.
+     */
+    if (!enabled) {
+        c0 = shadeHuman(base, 1.06);
+        c1 = shadeHuman(base, 1.01);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.00);
+
+    } else if (pressed) {
+        c0 = shadeHuman(base, 0.82);
+        c1 = shadeHuman(base, 0.92);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 0.90);
+
+    } else if (hovered) {
+        c0 = shadeHuman(base, 1.26);
+        c1 = shadeHuman(base, 1.10);
+        c2 = shadeHuman(base, 0.98);
+        c3 = shadeHuman(base, 1.05);
+
+    } else {
+        c0 = shadeHuman(base, 1.18);
+        c1 = shadeHuman(base, 1.04);
+        c2 = shadeHuman(base, 0.96);
+        c3 = shadeHuman(base, 1.01);
     }
 
-    // NOTE: Using focus animation for bg down because the pressed animation only works on press when enabled for buttons and not on release.
-    _animations->widgetStateEngine().updateState(widget, AnimationFocus, down && enabled);
-    // NOTE: Using hover animation for all pen animations to prevent flickering when closing the menu.
-    _animations->widgetStateEngine().updateState(widget, AnimationHover, (hovered || visualFocus || down) && enabled);
-    qreal bgAnimation = _animations->widgetStateEngine().opacity(widget, AnimationFocus);
-    qreal penAnimation = _animations->widgetStateEngine().opacity(widget, AnimationHover);
+    const QRect rect = option->rect;
 
-    QHash<QByteArray, bool> stateProperties;
-    stateProperties["enabled"] = enabled;
-    stateProperties["visualFocus"] = visualFocus;
-    stateProperties["hovered"] = hovered;
-    stateProperties["down"] = down;
-    stateProperties["checked"] = checked;
-    stateProperties["flat"] = flat;
-    stateProperties["hasMenu"] = hasMenu;
-    stateProperties["defaultButton"] = defaultButton;
-    stateProperties["hasNeutralHighlight"] = hasNeutralHighlight;
-    stateProperties["isActiveWindow"] = widget ? widget->isActiveWindow() : true;
-    stateProperties["roundButton"] = roundButton;
+    QLinearGradient gradient(
+        rect.topLeft(),
+        rect.bottomLeft());
 
-    _helper->renderButtonFrame(painter, option->rect, option->palette, stateProperties, bgAnimation, penAnimation);
+    gradient.setColorAt(0.00, c0);
+    gradient.setColorAt(0.48, c1);
+    gradient.setColorAt(0.52, c2);
+    gradient.setColorAt(1.00, c3);
+
+    constexpr qreal radius = 3.0;
+
+    QRectF frame(rect);
+    frame.adjust(
+        0.5,
+        0.5,
+        -0.5,
+        -0.5);
+
+    QPainterPath path;
+    path.addRoundedRect(
+        frame,
+        radius,
+        radius);
+
+    painter->save();
+
+    painter->setRenderHint(
+        QPainter::Antialiasing,
+        true);
+
+    painter->fillPath(
+        path,
+        gradient);
+
+    painter->setPen(
+        QPen(
+            shadeHuman(base, 0.55),
+            1.0));
+
+    painter->drawPath(path);
+
+    if (!pressed && rect.width() > 8) {
+        painter->setPen(
+            QPen(
+                withAlpha(Qt::white, 0.55),
+                1.0));
+
+        painter->drawLine(
+            QPointF(
+                rect.left() + radius + 1,
+                rect.top() + 1.5),
+            QPointF(
+                rect.right() - radius - 1,
+                rect.top() + 1.5));
+    }
+
+    painter->restore();
 
     return true;
 }
