@@ -845,11 +845,13 @@ int Style::pixelMetric(PixelMetric metric, const QStyleOption *option, const QWi
 
     // sliders
     case PM_SliderThickness:
-        return Metrics::Slider_ControlThickness;
     case PM_SliderControlThickness:
-        return Metrics::Slider_ControlThickness;
+        // Measured directly from qt6gtk2 + Human.
+        return 13;
+
     case PM_SliderLength:
-        return Metrics::Slider_ControlThickness;
+        // Measured directly from qt6gtk2 + Human.
+        return 20;
 
     // checkboxes and radio buttons
     case PM_IndicatorWidth:
@@ -3322,53 +3324,102 @@ QRect Style::dialSubControlRect(const QStyleOptionComplex *option, SubControl su
 }
 
 //___________________________________________________________________________________________________________________
-QRect Style::sliderSubControlRect(const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget) const
+QRect Style::sliderSubControlRect(
+    const QStyleOptionComplex *option,
+    SubControl subControl,
+    const QWidget *widget) const
 {
-    // cast option and check
-    const auto sliderOption(qstyleoption_cast<const QStyleOptionSlider *>(option));
+    const auto sliderOption =
+        qstyleoption_cast<const QStyleOptionSlider *>(option);
+
     if (!sliderOption) {
-        return ParentStyleClass::subControlRect(CC_Slider, option, subControl, widget);
+        return ParentStyleClass::subControlRect(
+            CC_Slider,
+            option,
+            subControl,
+            widget);
     }
 
-    // direction
-    const bool horizontal(sliderOption->orientation == Qt::Horizontal);
+    constexpr int humanThickness = 13;
+    constexpr int humanLength = 20;
+    constexpr int humanGrooveThickness = 7;
 
-    // somewhat a copy-pasta of QCommonStyle::subControlRect, except we want
-    // to account for our specific tick marks, and perform centering.
-    auto rect(sliderRectWithoutTickMarks(sliderOption));
+    const bool horizontal =
+        sliderOption->orientation == Qt::Horizontal;
+
+    const QRect rect =
+        sliderRectWithoutTickMarks(sliderOption);
 
     switch (subControl) {
+
     case SC_SliderHandle: {
-        QRect ret(centerRect(rect, Metrics::Slider_ControlThickness, Metrics::Slider_ControlThickness));
-        constexpr int len = Metrics::Slider_ControlThickness;
-        const int sliderPos = sliderPositionFromValue(sliderOption->minimum,
-                                                      sliderOption->maximum,
-                                                      sliderOption->sliderPosition,
-                                                      (horizontal ? rect.width() : rect.height()) - len,
-                                                      sliderOption->upsideDown);
+
+        QRect handleRect;
+
         if (horizontal) {
-            ret.moveLeft(rect.x() + sliderPos);
+            handleRect =
+                centerRect(
+                    rect,
+                    humanLength,
+                    humanThickness);
+
+            const int position =
+                sliderPositionFromValue(
+                    sliderOption->minimum,
+                    sliderOption->maximum,
+                    sliderOption->sliderPosition,
+                    rect.width() - humanLength,
+                    sliderOption->upsideDown);
+
+            handleRect.moveLeft(
+                rect.x() + position);
+
         } else {
-            ret.moveTop(rect.y() + sliderPos);
+            handleRect =
+                centerRect(
+                    rect,
+                    humanThickness,
+                    humanLength);
+
+            const int position =
+                sliderPositionFromValue(
+                    sliderOption->minimum,
+                    sliderOption->maximum,
+                    sliderOption->sliderPosition,
+                    rect.height() - humanLength,
+                    sliderOption->upsideDown);
+
+            handleRect.moveTop(
+                rect.y() + position);
         }
-        ret = visualRect(option->direction, rect, ret);
-        return ret;
+
+        return visualRect(
+            option->direction,
+            rect,
+            handleRect);
     }
 
     case SC_SliderGroove: {
-        auto grooveRect = insideMargin(rect, pixelMetric(PM_DefaultFrameWidth, option, widget));
 
-        // centering
         if (horizontal) {
-            grooveRect = centerRect(rect, grooveRect.width(), Metrics::Slider_GrooveThickness);
-        } else {
-            grooveRect = centerRect(rect, Metrics::Slider_GrooveThickness, grooveRect.height());
+            return centerRect(
+                rect,
+                rect.width(),
+                humanGrooveThickness);
         }
-        return grooveRect;
+
+        return centerRect(
+            rect,
+            humanGrooveThickness,
+            rect.height());
     }
 
     default:
-        return ParentStyleClass::subControlRect(CC_Slider, option, subControl, widget);
+        return ParentStyleClass::subControlRect(
+            CC_Slider,
+            option,
+            subControl,
+            widget);
     }
 }
 
@@ -9261,30 +9312,48 @@ bool Style::drawSpinBoxComplexControl(
 }
 
 //______________________________________________________________
-bool Style::drawSliderComplexControl(const QStyleOptionComplex *option, QPainter *painter, const QWidget *widget) const
+bool Style::drawSliderComplexControl(
+    const QStyleOptionComplex *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    // cast option and check
-    const auto sliderOption(qstyleoption_cast<const QStyleOptionSlider *>(option));
+    const auto sliderOption =
+        qstyleoption_cast<const QStyleOptionSlider *>(option);
+
     if (!sliderOption) {
         return true;
     }
 
-    // copy rect and palette
-    const auto &rect(option->rect);
-    const auto &palette(option->palette);
+    const QRect rect = option->rect;
+    const QPalette &palette = option->palette;
 
-    // copy state
-    const State &state(option->state);
-    const bool enabled(state & State_Enabled);
-    const bool mouseOver(enabled && (state & State_MouseOver));
-    const bool hasFocus(enabled && (state & State_HasFocus));
+    const State state(option->state);
 
-    // direction
-    const bool horizontal(sliderOption->orientation == Qt::Horizontal);
+    const bool enabled =
+        state & State_Enabled;
 
-    // retrieve rects of sub controls
-    const auto grooveRect(subControlRect(CC_Slider, sliderOption, SC_SliderGroove, widget));
-    const auto handleRect(subControlRect(CC_Slider, sliderOption, SC_SliderHandle, widget));
+    const bool mouseOver =
+        enabled && (state & State_MouseOver);
+
+    const bool hasFocus =
+        enabled && (state & State_HasFocus);
+
+    const bool horizontal =
+        sliderOption->orientation == Qt::Horizontal;
+
+    const QRect grooveRect =
+        subControlRect(
+            CC_Slider,
+            sliderOption,
+            SC_SliderGroove,
+            widget);
+
+    const QRect handleRect =
+        subControlRect(
+            CC_Slider,
+            sliderOption,
+            SC_SliderHandle,
+            widget);
 
     // tickmarks
     if (StyleConfigData::sliderDrawTickMarks() && (sliderOption->subControls & SC_SliderTickmarks)) {
@@ -9356,73 +9425,375 @@ bool Style::drawSliderComplexControl(const QStyleOptionComplex *option, QPainter
         }
     }
 
-    // groove
+
+    /*
+     * Human slider groove.
+     *
+     * Reference geometry is 7 px thick:
+     *
+     * 1 px upper highlight
+     * 1 px border
+     * 3 px interior
+     * 1 px border
+     * 1 px lower highlight
+     */
     if (sliderOption->subControls & SC_SliderGroove) {
-        // base color
-        const auto grooveColor(_helper->alphaColor(palette.color(QPalette::WindowText), 0.2));
 
-        if (!enabled) {
-            _helper->renderSliderGroove(painter, grooveRect, grooveColor, palette.color(QPalette::Window));
+        painter->save();
+
+        painter->setRenderHint(
+            QPainter::Antialiasing,
+            false);
+
+        const QColor outerTop("#DED3CA");
+        const QColor outerBottom("#F0EBE7");
+
+        const QColor emptyBorder("#B4A292");
+        const QColor emptyFill("#D0C2B5");
+
+        const QColor filledBorder =
+            enabled
+                ? QColor("#5B443A")
+                : QColor("#6D584E");
+
+        const QColor filledTop =
+            enabled
+                ? QColor("#895C49")
+                : QColor("#A57F6D");
+
+        const QColor filledBottom =
+            enabled
+                ? QColor("#8F5F4A")
+                : QColor("#A57F6D");
+
+        /*
+         * First paint the complete unfilled trough.
+         */
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(emptyFill);
+
+        if (horizontal) {
+
+            painter->fillRect(
+                grooveRect.adjusted(
+                    1, 2, -1, -2),
+                emptyFill);
+
+            painter->setPen(
+                QPen(emptyBorder, 1));
+
+            painter->drawLine(
+                grooveRect.left() + 1,
+                grooveRect.top() + 1,
+                grooveRect.right() - 1,
+                grooveRect.top() + 1);
+
+            painter->drawLine(
+                grooveRect.left() + 1,
+                grooveRect.bottom() - 1,
+                grooveRect.right() - 1,
+                grooveRect.bottom() - 1);
+
+            painter->setPen(
+                QPen(outerTop, 1));
+
+            painter->drawLine(
+                grooveRect.left() + 2,
+                grooveRect.top(),
+                grooveRect.right() - 2,
+                grooveRect.top());
+
+            painter->setPen(
+                QPen(outerBottom, 1));
+
+            painter->drawLine(
+                grooveRect.left() + 2,
+                grooveRect.bottom(),
+                grooveRect.right() - 2,
+                grooveRect.bottom());
+
         } else {
-            const bool upsideDown(sliderOption->upsideDown);
 
-            // highlight color
-            const auto &highlight = hasHighlightNeutral(widget, option, mouseOver, hasFocus) ? _helper->neutralText(palette) : palette.color(HighlightColor);
+            painter->fillRect(
+                grooveRect.adjusted(
+                    2, 1, -2, -1),
+                emptyFill);
 
-            if (sliderOption->orientation == Qt::Horizontal) {
-                auto leftRect(grooveRect);
-                leftRect.setRight(handleRect.right() - Metrics::Slider_ControlThickness / 2);
+            painter->setPen(
+                QPen(emptyBorder, 1));
 
-                auto rightRect(grooveRect);
-                rightRect.setLeft(handleRect.left() + Metrics::Slider_ControlThickness / 2);
+            painter->drawLine(
+                grooveRect.left() + 1,
+                grooveRect.top() + 1,
+                grooveRect.left() + 1,
+                grooveRect.bottom() - 1);
 
-                if (option->direction == Qt::RightToLeft) {
-                    std::swap(leftRect, rightRect);
+            painter->drawLine(
+                grooveRect.right() - 1,
+                grooveRect.top() + 1,
+                grooveRect.right() - 1,
+                grooveRect.bottom() - 1);
+
+            painter->setPen(
+                QPen(outerTop, 1));
+
+            painter->drawLine(
+                grooveRect.left(),
+                grooveRect.top() + 2,
+                grooveRect.left(),
+                grooveRect.bottom() - 2);
+
+            painter->setPen(
+                QPen(outerBottom, 1));
+
+            painter->drawLine(
+                grooveRect.right(),
+                grooveRect.top() + 2,
+                grooveRect.right(),
+                grooveRect.bottom() - 2);
+        }
+
+        /*
+         * Filled portion terminates beneath the handle.
+         */
+        QRect filledRect = grooveRect;
+
+        if (horizontal) {
+
+            const bool fillFromLeft =
+                !sliderOption->upsideDown;
+
+            if (fillFromLeft) {
+                filledRect.setRight(
+                    handleRect.center().x());
+            } else {
+                filledRect.setLeft(
+                    handleRect.center().x());
+            }
+
+            /*
+             * RTL reverses visual placement.
+             */
+            if (option->direction == Qt::RightToLeft) {
+                QRect reversed = grooveRect;
+
+                if (fillFromLeft) {
+                    reversed.setLeft(
+                        handleRect.center().x());
+                } else {
+                    reversed.setRight(
+                        handleRect.center().x());
                 }
 
-                // Background
-                _helper->renderSliderGroove(painter, leftRect.united(rightRect), grooveColor, palette.color(QPalette::Window));
-                // Fill
-                _helper->renderSliderGroove(painter, upsideDown ? rightRect : leftRect, highlight, palette.color(QPalette::Window));
-
-            } else {
-                auto topRect(grooveRect);
-                auto bottomRect(grooveRect);
-                topRect.setBottom(handleRect.bottom() - Metrics::Slider_ControlThickness / 2);
-                bottomRect.setTop(handleRect.top() + Metrics::Slider_ControlThickness / 2);
-
-                // Background
-                _helper->renderSliderGroove(painter, topRect.united(bottomRect), grooveColor, palette.color(QPalette::Window));
-                // Fill
-                _helper->renderSliderGroove(painter, upsideDown ? bottomRect : topRect, highlight, palette.color(QPalette::Window));
+                filledRect = reversed;
             }
+
+            QLinearGradient fillGradient(
+                filledRect.topLeft(),
+                filledRect.bottomLeft());
+
+            fillGradient.setColorAt(
+                0.0,
+                filledTop);
+
+            fillGradient.setColorAt(
+                1.0,
+                filledBottom);
+
+            painter->fillRect(
+                filledRect.adjusted(
+                    1, 2, -1, -2),
+                fillGradient);
+
+            painter->setPen(
+                QPen(filledBorder, 1));
+
+            painter->drawLine(
+                filledRect.left() + 1,
+                filledRect.top() + 1,
+                filledRect.right() - 1,
+                filledRect.top() + 1);
+
+            painter->drawLine(
+                filledRect.left() + 1,
+                filledRect.bottom() - 1,
+                filledRect.right() - 1,
+                filledRect.bottom() - 1);
+
+        } else {
+
+            const bool fillFromBottom =
+                !sliderOption->upsideDown;
+
+            if (fillFromBottom) {
+                filledRect.setTop(
+                    handleRect.center().y());
+            } else {
+                filledRect.setBottom(
+                    handleRect.center().y());
+            }
+
+            QLinearGradient fillGradient(
+                filledRect.topLeft(),
+                filledRect.topRight());
+
+            fillGradient.setColorAt(
+                0.0,
+                filledTop);
+
+            fillGradient.setColorAt(
+                1.0,
+                filledBottom);
+
+            painter->fillRect(
+                filledRect.adjusted(
+                    2, 1, -2, -1),
+                fillGradient);
+
+            painter->setPen(
+                QPen(filledBorder, 1));
+
+            painter->drawLine(
+                filledRect.left() + 1,
+                filledRect.top() + 1,
+                filledRect.left() + 1,
+                filledRect.bottom() - 1);
+
+            painter->drawLine(
+                filledRect.right() - 1,
+                filledRect.top() + 1,
+                filledRect.right() - 1,
+                filledRect.bottom() - 1);
         }
+
+        painter->restore();
     }
 
-    // handle
+    /*
+     * Human slider handle.
+     *
+     * Reference:
+     *   20x13 horizontal
+     *   13x20 vertical
+     *
+     * Hover and pressed use the same slightly brighter
+     * handle appearance.
+     */
     if (sliderOption->subControls & SC_SliderHandle) {
-        // handle state
-        const bool handleActive(sliderOption->activeSubControls & SC_SliderHandle);
-        const bool sunken(state & (State_On | State_Sunken));
 
-        // animation state
-        _animations->widgetStateEngine().updateState(widget, AnimationHover, handleActive && mouseOver);
-        _animations->widgetStateEngine().updateState(widget, AnimationFocus, hasFocus);
-        const AnimationMode mode(_animations->widgetStateEngine().buttonAnimationMode(widget));
-        const qreal opacity(_animations->widgetStateEngine().buttonOpacity(widget));
+        const bool handleActive =
+            sliderOption->activeSubControls
+            & SC_SliderHandle;
 
-        // define colors
-        const auto &background = palette.color(QPalette::Button);
-        auto outline(_helper->sliderOutlineColor(palette, handleActive && mouseOver, hasFocus, opacity, mode));
-        if (hasFocus || (handleActive && mouseOver)) {
-            outline = hasHighlightNeutral(widget, option, handleActive && mouseOver, hasFocus)
-                ? _helper->neutralText(palette).lighter(mouseOver || hasFocus ? 150 : 100)
-                : outline;
+        const bool active =
+            enabled
+            && handleActive
+            && mouseOver;
+
+        QColor border;
+        QColor top;
+        QColor upper;
+        QColor middle;
+        QColor lower;
+        QColor bottom;
+
+        if (!enabled) {
+
+            border = QColor("#CDBFB2");
+            top = QColor("#E9E0DA");
+            upper = QColor("#EBE3DE");
+            middle = QColor("#E8E0D8");
+            lower = QColor("#E5DCD4");
+            bottom = QColor("#E3D9D1");
+
+        } else if (active) {
+
+            border = QColor("#AFA195");
+            top = QColor("#F1EBE6");
+            upper = QColor("#F7F4F1");
+            middle = QColor("#EFE9E4");
+            lower = QColor("#E9DDD5");
+            bottom = QColor("#E1D6CD");
+
+        } else {
+
+            border = QColor("#AB9E92");
+            top = QColor("#EEE6E1");
+            upper = QColor("#F5F1ED");
+            middle = QColor("#EDE7E1");
+            lower = QColor("#E6DED6");
+            bottom = QColor("#DDD2C8");
         }
-        const auto shadow(_helper->shadowColor(palette));
 
-        // render
-        _helper->renderSliderHandle(painter, handleRect, background, outline, shadow, sunken);
+        QLinearGradient gradient;
+
+        if (horizontal) {
+            gradient = QLinearGradient(
+                handleRect.topLeft(),
+                handleRect.bottomLeft());
+        } else {
+            gradient = QLinearGradient(
+                handleRect.topLeft(),
+                handleRect.topRight());
+        }
+
+        gradient.setColorAt(
+            0.00,
+            top);
+
+        gradient.setColorAt(
+            0.38,
+            upper);
+
+        gradient.setColorAt(
+            0.52,
+            middle);
+
+        gradient.setColorAt(
+            0.78,
+            lower);
+
+        gradient.setColorAt(
+            1.00,
+            bottom);
+
+        QRectF frame(handleRect);
+
+        frame.adjust(
+            0.5,
+            0.5,
+            -0.5,
+            -0.5);
+
+        QPainterPath path;
+
+        path.addRoundedRect(
+            frame,
+            2.0,
+            2.0);
+
+        painter->save();
+
+        painter->setRenderHint(
+            QPainter::Antialiasing,
+            true);
+
+        painter->fillPath(
+            path,
+            gradient);
+
+        painter->setBrush(
+            Qt::NoBrush);
+
+        painter->setPen(
+            QPen(
+                border,
+                1.0));
+
+        painter->drawPath(
+            path);
+
+        painter->restore();
     }
 
     return true;
