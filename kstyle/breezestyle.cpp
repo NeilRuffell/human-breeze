@@ -732,7 +732,10 @@ int Style::pixelMetric(PixelMetric metric, const QStyleOption *option, const QWi
     }
 
     case PM_SpinBoxFrameWidth:
-        return Metrics::SpinBox_FrameWidth;
+        /*
+         * Measured directly from qt6gtk2 with the Human GTK theme.
+         */
+        return 3;
     case PM_ToolBarFrameWidth:
         return Metrics::ToolBar_FrameWidth;
     case PM_ToolTipLabelFrameWidth:
@@ -3011,64 +3014,142 @@ QRect Style::comboBoxSubControlRect(const QStyleOptionComplex *option, SubContro
 }
 
 //___________________________________________________________________________________________________________________
-QRect Style::spinBoxSubControlRect(const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget) const
+QRect Style::spinBoxSubControlRect(
+    const QStyleOptionComplex *option,
+    SubControl subControl,
+    const QWidget *widget) const
 {
-    // cast option and check
-    const auto spinBoxOption(qstyleoption_cast<const QStyleOptionSpinBox *>(option));
-    if (!spinBoxOption) {
-        return ParentStyleClass::subControlRect(CC_SpinBox, option, subControl, widget);
-    }
-    const bool flat(!spinBoxOption->frame);
+    const auto spinBoxOption =
+        qstyleoption_cast<const QStyleOptionSpinBox *>(option);
 
-    // copy rect
-    auto rect(option->rect);
+    if (!spinBoxOption) {
+        return ParentStyleClass::subControlRect(
+            CC_SpinBox,
+            option,
+            subControl,
+            widget);
+    }
+
+    const QRect baseRect = option->rect;
+
+    const bool flat =
+        !spinBoxOption->frame;
+
+    const int frameWidth =
+        flat
+            ? 0
+            : pixelMetric(
+                  PM_SpinBoxFrameWidth,
+                  option,
+                  widget);
+
+    const int buttonWidth =
+        Metrics::SpinBox_ArrowButtonWidth;
+
+    const int center =
+        baseRect.height() / 2;
+
+    /*
+     * Port of the geometry used by Qt's GTK style.
+     *
+     * For a 366x28 spinbox with Human:
+     *
+     * EDIT  3,3   345x22
+     * UP    350,3 15x11
+     * DOWN  350,14 15x11
+     */
+    const int buttonX =
+        baseRect.left()
+        + baseRect.width()
+        - frameWidth
+        - buttonWidth
+        + 2;
+
+    QRect rect;
 
     switch (subControl) {
+
     case SC_SpinBoxFrame:
-        return flat ? QRect() : rect;
+        rect =
+            flat
+                ? QRect()
+                : baseRect;
+        break;
 
     case SC_SpinBoxUp:
-    case SC_SpinBoxDown: {
-        // take out frame width
-        if (!flat && rect.height() >= 2 * Metrics::Frame_FrameWidth + Metrics::SpinBox_ArrowButtonWidth) {
-            rect = insideMargin(rect, Metrics::Frame_FrameWidth);
+
+        if (spinBoxOption->buttonSymbols
+            == QAbstractSpinBox::NoButtons) {
+            return QRect();
         }
 
-        QRect arrowRect;
-        arrowRect = QRect(rect.right() - Metrics::SpinBox_ArrowButtonWidth + 1, rect.top(), Metrics::SpinBox_ArrowButtonWidth, rect.height());
+        rect = QRect(
+            buttonX,
+            baseRect.top() + frameWidth,
+            buttonWidth,
+            center - frameWidth);
 
-        const int arrowHeight(qMin(rect.height(), int(Metrics::SpinBox_ArrowButtonWidth)));
-        arrowRect = centerRect(arrowRect, Metrics::SpinBox_ArrowButtonWidth, arrowHeight);
-        arrowRect.setHeight(arrowHeight / 2);
-        if (subControl == SC_SpinBoxDown) {
-            arrowRect.translate(0, arrowHeight / 2);
+        break;
+
+    case SC_SpinBoxDown:
+
+        if (spinBoxOption->buttonSymbols
+            == QAbstractSpinBox::NoButtons) {
+            return QRect();
         }
 
-        return visualRect(option, arrowRect);
-    }
+        rect = QRect(
+            buttonX,
+            baseRect.top() + center,
+            buttonWidth,
+            baseRect.height()
+                - center
+                - frameWidth);
+
+        break;
 
     case SC_SpinBoxEditField: {
-        const bool showButtons = spinBoxOption->buttonSymbols != QAbstractSpinBox::NoButtons;
 
-        QRect labelRect = rect;
-        if (showButtons) {
-            labelRect.setRight(rect.right() - Metrics::SpinBox_ArrowButtonWidth);
+        const bool showButtons =
+            spinBoxOption->buttonSymbols
+            != QAbstractSpinBox::NoButtons;
+
+        if (!showButtons) {
+            rect = QRect(
+                baseRect.left() + frameWidth,
+                baseRect.top() + frameWidth,
+                baseRect.width()
+                    - 2 * frameWidth,
+                baseRect.height()
+                    - 2 * frameWidth);
+
+        } else {
+            const int width =
+                buttonX
+                - baseRect.left()
+                - frameWidth
+                - qMax(frameWidth - 1, 0);
+
+            rect = QRect(
+                baseRect.left() + frameWidth,
+                baseRect.top() + frameWidth,
+                width,
+                baseRect.height()
+                    - 2 * frameWidth);
         }
 
-        // remove right side line editor margins
-        const int frameWidth(pixelMetric(PM_SpinBoxFrameWidth, option, widget));
-        if (!flat && labelRect.height() >= option->fontMetrics.height() + 2 * frameWidth) {
-            labelRect.adjust(frameWidth, frameWidth, showButtons ? 0 : -frameWidth, -frameWidth);
-        }
-
-        return visualRect(option, labelRect);
-    }
-
-    default:
         break;
     }
 
-    return ParentStyleClass::subControlRect(CC_SpinBox, option, subControl, widget);
+    default:
+        return ParentStyleClass::subControlRect(
+            CC_SpinBox,
+            option,
+            subControl,
+            widget);
+    }
+
+    return visualRect(option, rect);
 }
 
 //___________________________________________________________________________________________________________________
@@ -3365,32 +3446,48 @@ QSize Style::comboBoxSizeFromContents(const QStyleOption *option, const QSize &c
 }
 
 //______________________________________________________________
-QSize Style::spinBoxSizeFromContents(const QStyleOption *option, const QSize &contentsSize, const QWidget *widget) const
+QSize Style::spinBoxSizeFromContents(
+    const QStyleOption *option,
+    const QSize &contentsSize,
+    const QWidget *widget) const
 {
-    // cast option and check
-    const auto spinBoxOption(qstyleoption_cast<const QStyleOptionSpinBox *>(option));
+    const auto spinBoxOption =
+        qstyleoption_cast<const QStyleOptionSpinBox *>(option);
+
     if (!spinBoxOption) {
         return contentsSize;
     }
 
-    const bool flat(!spinBoxOption->frame);
+    const bool flat =
+        !spinBoxOption->frame;
 
-    // copy size
     QSize size(contentsSize);
 
-    // add editor margins
-    const int frameWidth(pixelMetric(PM_SpinBoxFrameWidth, option, widget));
+    const int frameWidth =
+        flat
+            ? 0
+            : pixelMetric(
+                  PM_SpinBoxFrameWidth,
+                  option,
+                  widget);
+
     if (!flat) {
-        size = expandSize(size, frameWidth);
+        size = expandSize(
+            size,
+            frameWidth);
     }
 
-    // make sure there is enough height for the button
-    size.setHeight(qMax(size.height(), int(Metrics::SpinBox_ArrowButtonWidth)));
+    /*
+     * Measured Human/qt6gtk2 control height.
+     */
+    size.setHeight(
+        qMax(size.height(), 28));
 
-    // add button width and spacing
-    const bool showButtons = spinBoxOption->buttonSymbols != QAbstractSpinBox::NoButtons;
-    if (showButtons) {
-        size.rwidth() += Metrics::SpinBox_ArrowButtonWidth;
+    if (spinBoxOption->buttonSymbols
+        != QAbstractSpinBox::NoButtons) {
+
+        size.rwidth() +=
+            Metrics::SpinBox_ArrowButtonWidth + 1;
     }
 
     return size;
@@ -8742,38 +8839,422 @@ bool Style::drawComboBoxComplexControl(const QStyleOptionComplex *option, QPaint
 }
 
 //______________________________________________________________
-bool Style::drawSpinBoxComplexControl(const QStyleOptionComplex *option, QPainter *painter, const QWidget *widget) const
+bool Style::drawSpinBoxComplexControl(
+    const QStyleOptionComplex *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    const auto spinBoxOption(qstyleoption_cast<const QStyleOptionSpinBox *>(option));
+    const auto spinBoxOption =
+        qstyleoption_cast<const QStyleOptionSpinBox *>(option);
+
     if (!spinBoxOption) {
         return true;
     }
 
-    // store palette and rect
-    const auto &palette(option->palette);
-    const auto &rect(option->rect);
+    const QRect rect = option->rect;
+
+    const bool enabled =
+        option->state & State_Enabled;
+
+    const bool focused =
+        enabled && (option->state & State_HasFocus);
+
+    const bool hasButtons =
+        spinBoxOption->buttonSymbols
+        != QAbstractSpinBox::NoButtons;
+
+    const bool rtl =
+        option->direction == Qt::RightToLeft;
+
+    auto sidePath =
+        [](QRectF r,
+           bool roundLeft,
+           bool roundRight) -> QPainterPath {
+
+            constexpr qreal radius = 2.0;
+
+            QPainterPath path;
+
+            path.moveTo(
+                r.left() + (roundLeft ? radius : 0.0),
+                r.top());
+
+            path.lineTo(
+                r.right() - (roundRight ? radius : 0.0),
+                r.top());
+
+            if (roundRight) {
+                path.quadTo(
+                    r.right(),
+                    r.top(),
+                    r.right(),
+                    r.top() + radius);
+            }
+
+            path.lineTo(
+                r.right(),
+                r.bottom() - (roundRight ? radius : 0.0));
+
+            if (roundRight) {
+                path.quadTo(
+                    r.right(),
+                    r.bottom(),
+                    r.right() - radius,
+                    r.bottom());
+            }
+
+            path.lineTo(
+                r.left() + (roundLeft ? radius : 0.0),
+                r.bottom());
+
+            if (roundLeft) {
+                path.quadTo(
+                    r.left(),
+                    r.bottom(),
+                    r.left(),
+                    r.bottom() - radius);
+            }
+
+            path.lineTo(
+                r.left(),
+                r.top() + (roundLeft ? radius : 0.0));
+
+            if (roundLeft) {
+                path.quadTo(
+                    r.left(),
+                    r.top(),
+                    r.left() + radius,
+                    r.top());
+            }
+
+            path.closeSubpath();
+
+            return path;
+        };
 
     if (option->subControls & SC_SpinBoxFrame) {
-        // detect flat spinboxes
-        bool flat(!spinBoxOption->frame);
-        flat |= (rect.height() < 2 * Metrics::Frame_FrameWidth + Metrics::SpinBox_ArrowButtonWidth);
-        if (flat) {
-            const auto &background = palette.color(QPalette::Base);
 
-            painter->setBrush(background);
-            painter->setPen(Qt::NoPen);
-            painter->drawRect(rect);
+        if (!spinBoxOption->frame) {
+
+            painter->fillRect(
+                rect,
+                option->palette.color(QPalette::Base));
 
         } else {
-            drawPrimitive(PE_FrameLineEdit, option, painter, widget);
+
+            /*
+             * Measured directly from the qt6gtk2 Human reference.
+             */
+            const QColor entryBackground =
+                enabled
+                    ? QColor("#FFFFFF")
+                    : QColor("#E6DDD5");
+
+            const QColor entryBorder =
+                !enabled
+                    ? QColor("#BCAB9B")
+                    : focused
+                        ? QColor("#C6866A")
+                        : QColor("#8B7969");
+
+            const QColor spinnerBorder(
+                enabled
+                    ? "#AB9E92"
+                    : "#CDBFB2");
+
+            QRect editPaint = rect;
+            QRect upPaint;
+            QRect downPaint;
+            QRect buttonPaint;
+
+            if (hasButtons) {
+
+                upPaint =
+                    subControlRect(
+                        CC_SpinBox,
+                        option,
+                        SC_SpinBoxUp,
+                        widget);
+
+                downPaint =
+                    subControlRect(
+                        CC_SpinBox,
+                        option,
+                        SC_SpinBoxDown,
+                        widget);
+
+                /*
+                 * Match Qt's GTK style paint geometry:
+                 * hit rectangles sit inside the frame, while the
+                 * painted spinbutton extends to the outer edge.
+                 */
+                upPaint.setTop(rect.top());
+                downPaint.setBottom(rect.bottom());
+
+                if (rtl) {
+
+                    upPaint.setLeft(rect.left());
+                    downPaint.setLeft(rect.left());
+
+                    editPaint.setLeft(
+                        upPaint.right());
+
+                } else {
+
+                    upPaint.setRight(rect.right());
+                    downPaint.setRight(rect.right());
+
+                    editPaint.setRight(
+                        upPaint.left());
+                }
+
+                buttonPaint =
+                    upPaint.united(downPaint);
+            }
+
+            painter->save();
+
+            painter->setRenderHint(
+                QPainter::Antialiasing,
+                true);
+
+            /*
+             * ENTRY FIELD
+             */
+            QRectF entryRect(editPaint);
+
+            entryRect.adjust(
+                0.5,
+                0.5,
+                -0.5,
+                -0.5);
+
+            const QPainterPath entryPath =
+                sidePath(
+                    entryRect,
+                    !hasButtons || !rtl,
+                    !hasButtons || rtl);
+
+            painter->fillPath(
+                entryPath,
+                entryBackground);
+
+            painter->setBrush(Qt::NoBrush);
+
+            painter->setPen(
+                QPen(entryBorder, 1.0));
+
+            painter->drawPath(
+                entryPath);
+
+            /*
+             * SPINNER BUTTON COLUMN
+             */
+            if (hasButtons
+                && buttonPaint.isValid()) {
+
+                QRectF buttonRect(buttonPaint);
+
+                buttonRect.adjust(
+                    0.5,
+                    0.5,
+                    -0.5,
+                    -0.5);
+
+                const QPainterPath buttonPath =
+                    sidePath(
+                        buttonRect,
+                        rtl,
+                        !rtl);
+
+                painter->save();
+                painter->setClipPath(buttonPath);
+
+                /*
+                 * The reference has two different glaze ramps.
+                 * Upper half brightens toward its lower edge.
+                 * Lower half darkens toward the bottom.
+                 */
+                /*
+                 * The original Human/ubuntulooks spinner has
+                 * NO separate hover appearance.
+                 *
+                 * PRELIGHT == NORMAL visually.
+                 *
+                 * Only the active SUNKEN half changes.
+                 */
+                const bool upPressed =
+                    enabled
+                    && (option->state & State_Sunken)
+                    && (option->activeSubControls
+                        & SC_SpinBoxUp);
+
+                const bool downPressed =
+                    enabled
+                    && (option->state & State_Sunken)
+                    && (option->activeSubControls
+                        & SC_SpinBoxDown);
+
+                QLinearGradient upperGradient(
+                    upPaint.topLeft(),
+                    upPaint.bottomLeft());
+
+                if (upPressed) {
+
+                    /*
+                     * Sampled from qt6gtk2 + Human:
+                     * dark at top, progressively lighter downwards.
+                     */
+                    upperGradient.setColorAt(
+                        0.00,
+                        QColor("#C4B5A6"));
+
+                    upperGradient.setColorAt(
+                        0.35,
+                        QColor("#D0C3B7"));
+
+                    upperGradient.setColorAt(
+                        0.70,
+                        QColor("#DBD1C8"));
+
+                    upperGradient.setColorAt(
+                        1.00,
+                        QColor("#E1DAD1"));
+
+                } else if (!enabled) {
+
+                    upperGradient.setColorAt(
+                        0.00,
+                        QColor("#E4DBD2"));
+
+                    upperGradient.setColorAt(
+                        0.55,
+                        QColor("#E8E0D8"));
+
+                    upperGradient.setColorAt(
+                        1.00,
+                        QColor("#E9E1DA"));
+
+                } else {
+
+                    upperGradient.setColorAt(
+                        0.00,
+                        QColor("#E4DAD2"));
+
+                    upperGradient.setColorAt(
+                        0.35,
+                        QColor("#EAE2DB"));
+
+                    upperGradient.setColorAt(
+                        0.70,
+                        QColor("#EBE4DD"));
+
+                    upperGradient.setColorAt(
+                        1.00,
+                        QColor("#EBE6DF"));
+                }
+
+                QLinearGradient lowerGradient(
+                    downPaint.topLeft(),
+                    downPaint.bottomLeft());
+
+                if (downPressed) {
+
+                    lowerGradient.setColorAt(
+                        0.00,
+                        QColor("#C5B5A7"));
+
+                    lowerGradient.setColorAt(
+                        0.35,
+                        QColor("#CBBDB0"));
+
+                    lowerGradient.setColorAt(
+                        0.70,
+                        QColor("#D0C3B7"));
+
+                    lowerGradient.setColorAt(
+                        1.00,
+                        QColor("#D5C8BC"));
+
+                } else if (!enabled) {
+
+                    lowerGradient.setColorAt(
+                        0.00,
+                        QColor("#E6DDD5"));
+
+                    lowerGradient.setColorAt(
+                        0.50,
+                        QColor("#E5DCD4"));
+
+                    lowerGradient.setColorAt(
+                        1.00,
+                        QColor("#E1D5CC"));
+
+                } else {
+
+                    lowerGradient.setColorAt(
+                        0.00,
+                        QColor("#E5DBD3"));
+
+                    lowerGradient.setColorAt(
+                        0.35,
+                        QColor("#E2D9D0"));
+
+                    lowerGradient.setColorAt(
+                        0.70,
+                        QColor("#E0D5CC"));
+
+                    lowerGradient.setColorAt(
+                        1.00,
+                        QColor("#D8CCC1"));
+                }
+
+                painter->fillRect(
+                    upPaint,
+                    upperGradient);
+
+                painter->fillRect(
+                    downPaint,
+                    lowerGradient);
+
+                painter->restore();
+
+                /*
+                 * Spinner outer frame.
+                 */
+                painter->setBrush(Qt::NoBrush);
+
+                painter->setPen(
+                    QPen(
+                        spinnerBorder,
+                        1.0));
+
+                painter->drawPath(
+                    buttonPath);
+
+            }
+
+            painter->restore();
         }
     }
 
+    /*
+     * Arrow glyphs are painted separately.
+     */
     if (option->subControls & SC_SpinBoxUp) {
-        renderSpinBoxArrow(SC_SpinBoxUp, spinBoxOption, painter, widget);
+        renderSpinBoxArrow(
+            SC_SpinBoxUp,
+            spinBoxOption,
+            painter,
+            widget);
     }
+
     if (option->subControls & SC_SpinBoxDown) {
-        renderSpinBoxArrow(SC_SpinBoxDown, spinBoxOption, painter, widget);
+        renderSpinBoxArrow(
+            SC_SpinBoxDown,
+            spinBoxOption,
+            painter,
+            widget);
     }
 
     return true;
@@ -9172,51 +9653,108 @@ bool Style::drawTitleBarComplexControl(const QStyleOptionComplex *option, QPaint
 }
 
 //____________________________________________________________________________________________________
-void Style::renderSpinBoxArrow(const SubControl &subControl, const QStyleOptionSpinBox *option, QPainter *painter, const QWidget *widget) const
+void Style::renderSpinBoxArrow(
+    const SubControl &subControl,
+    const QStyleOptionSpinBox *option,
+    QPainter *painter,
+    const QWidget *widget) const
 {
-    const auto &palette(option->palette);
-    const State &state(option->state);
+    const QRect rect =
+        subControlRect(
+            CC_SpinBox,
+            option,
+            subControl,
+            widget);
 
-    // enable state
-    bool enabled(state & State_Enabled);
-
-    // check steps enable step
-    const bool atLimit((subControl == SC_SpinBoxUp && !(option->stepEnabled & QAbstractSpinBox::StepUpEnabled))
-                       || (subControl == SC_SpinBoxDown && !(option->stepEnabled & QAbstractSpinBox::StepDownEnabled)));
-
-    // update enabled state accordingly
-    enabled &= !atLimit;
-
-    // update mouse-over effect
-    const bool mouseOver(enabled && (state & State_MouseOver));
-
-    // check animation state
-    const bool subControlHover(enabled && mouseOver && (option->activeSubControls & subControl));
-    _animations->spinBoxEngine().updateState(widget, subControl, subControlHover);
-
-    const bool animated(enabled && _animations->spinBoxEngine().isAnimated(widget, subControl));
-    const qreal opacity(_animations->spinBoxEngine().opacity(widget, subControl));
-
-    auto color = _helper->arrowColor(palette, QPalette::Text);
-    if (animated) {
-        auto highlight = _helper->hoverColor(palette);
-        color = KColorUtils::mix(color, highlight, opacity);
-
-    } else if (subControlHover) {
-        color = _helper->hoverColor(palette);
-
-    } else if (atLimit) {
-        color = _helper->arrowColor(palette, QPalette::Disabled, QPalette::Text);
+    if (!rect.isValid()) {
+        return;
     }
 
-    // arrow orientation
-    ArrowOrientation orientation((subControl == SC_SpinBoxUp) ? ArrowUp : ArrowDown);
+    bool enabled =
+        option->state & State_Enabled;
 
-    // arrow rect
-    const auto arrowRect(subControlRect(CC_SpinBox, option, subControl, widget));
+    const bool atLimit =
+        (subControl == SC_SpinBoxUp
+            && !(option->stepEnabled
+                 & QAbstractSpinBox::StepUpEnabled))
+        ||
+        (subControl == SC_SpinBoxDown
+            && !(option->stepEnabled
+                 & QAbstractSpinBox::StepDownEnabled));
 
-    // render
-    _helper->renderArrow(painter, arrowRect, color, orientation);
+    enabled &= !atLimit;
+
+    /*
+     * Pixel-matched against the qt6gtk2 Human reference.
+     *
+     * Enabled center pixels are approximately #3B3937.
+     * Disabled/limit arrows are approximately #B09F8F.
+     */
+    const QColor color =
+        enabled
+            ? QColor("#3B3937")
+            : QColor("#B09F8F");
+
+    const QPointF c =
+        QRectF(rect).center();
+
+    /*
+     * Reference arrow footprint is approximately:
+     * 7 px wide × 4 px high.
+     */
+    constexpr qreal halfWidth = 3.0;
+    constexpr qreal halfHeight = 1.5;
+
+    QPainterPath arrow;
+
+    if (subControl == SC_SpinBoxUp) {
+
+        arrow.moveTo(
+            c.x() - halfWidth,
+            c.y() + halfHeight);
+
+        arrow.lineTo(
+            c.x(),
+            c.y() - halfHeight);
+
+        arrow.lineTo(
+            c.x() + halfWidth,
+            c.y() + halfHeight);
+
+    } else {
+
+        arrow.moveTo(
+            c.x() - halfWidth,
+            c.y() - halfHeight);
+
+        arrow.lineTo(
+            c.x(),
+            c.y() + halfHeight);
+
+        arrow.lineTo(
+            c.x() + halfWidth,
+            c.y() - halfHeight);
+    }
+
+    painter->save();
+
+    painter->setRenderHint(
+        QPainter::Antialiasing,
+        true);
+
+    painter->setBrush(Qt::NoBrush);
+
+    painter->setPen(
+        QPen(
+            color,
+            1.2,
+            Qt::SolidLine,
+            Qt::RoundCap,
+            Qt::RoundJoin));
+
+    painter->drawPath(arrow);
+
+    painter->restore();
 }
 
 //______________________________________________________________________________
